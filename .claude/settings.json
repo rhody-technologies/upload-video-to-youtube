@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./client_secret.json)",
+      "Read(./token.json)"
+    ]
+  }
+}

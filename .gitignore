@@ -1,0 +1,35 @@
+client_secret.json
+token_youtube.json
+token_sheets.json
+
+# Terraform lambda build artifacts
+infra/modules/*/build/
+infra/modules/*/lambda.zip
+
+# Terraform local state/init
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+/venv/
+
+# Default ignored files
+/shelf/
+/workspace.xml
+# Editor-based HTTP Client requests
+/httpRequests/
+# Datasource local storage ignored files
+/dataSources/
+/dataSources.local.xml
+
+
+.idea
+
+__pycache__
