@@ -37,6 +37,7 @@ CLIENT_SECRETS_FILE = "client_secret.json"
 SPREADSHEET_ID = "1ixRaM2U94qshptAZ7JATM8bihBGlLniS5gD2S43y_F0"
 SHEET_NAME = "YT Segments"
 POSTING_COLUMN = "Posted"
+VIDEO_ID_COLUMN = "Video ID"
 PLAYLIST_ID = "PLGjEeEf-wkkDgD6xRh0e-VnloDrbpY_bJ"
 
 # YouTube and Sheets are authorized by different Google accounts, so each
@@ -132,6 +133,8 @@ def get_pending_rows(spreadsheet_id: str = SPREADSHEET_ID, sheet_range: str = "S
     Fetch rows from the given Google Sheet where the 'Posting' column is FALSE.
 
     Returns a list of dicts mapping header names to cell values, one per pending row.
+    Each dict also carries a '_row_number' key: its 1-indexed row number in the
+    sheet (accounting for the header row), used later to write back upload results.
     """
     sheets = get_sheets_service()
     result = sheets.spreadsheets().values().get(
@@ -150,12 +153,77 @@ def get_pending_rows(spreadsheet_id: str = SPREADSHEET_ID, sheet_range: str = "S
         sys.exit(f"[ERROR] Could not find a '{POSTING_COLUMN}' column in the sheet header row.")
 
     pending_rows = []
-    for row in data_rows:
+    for i, row in enumerate(data_rows):
         posting_value = row[posting_idx] if posting_idx < len(row) else ""
         if str(posting_value).strip().upper() == "FALSE":
-            pending_rows.append(dict(zip(header, row)))
+            row_dict = dict(zip(header, row))
+            row_dict["_row_number"] = i + 2  # +1 for header row, +1 for 1-indexing
+            pending_rows.append(row_dict)
 
     return pending_rows
+
+
+# ── Sheet updates ────────────────────────────────────────────────────────────
+
+def _col_letter(index: int) -> str:
+    """Convert a 0-indexed column number to its A1 letter(s) (0 -> 'A', 25 -> 'Z', 26 -> 'AA')."""
+    index += 1
+    letters = ""
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
+def _get_header(sheets, spreadsheet_id: str, sheet_range: str) -> list[str]:
+    """Fetch just the header row of the given sheet."""
+    result = sheets.spreadsheets().values().get(
+        spreadsheetId=spreadsheet_id,
+        range=f"{sheet_range}!1:1",
+    ).execute()
+    values = result.get("values", [])
+    return values[0] if values else []
+
+
+def _ensure_column(sheets, spreadsheet_id: str, sheet_range: str, header: list[str], column_name: str) -> tuple[list[str], int]:
+    """
+    Ensure `column_name` exists in the sheet header, appending it as a new
+    column if it doesn't. Returns the (possibly updated) header and the
+    column's 0-indexed position.
+    """
+    if column_name in header:
+        return header, header.index(column_name)
+
+    col_index = len(header)
+    sheets.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id,
+        range=f"{sheet_range}!{_col_letter(col_index)}1",
+        valueInputOption="RAW",
+        body={"values": [[column_name]]},
+    ).execute()
+    return header + [column_name], col_index
+
+
+def mark_video_posted(
+        sheets,
+        spreadsheet_id: str,
+        sheet_range: str,
+        row_number: int,
+        posted_col_idx: int,
+        video_id_col_idx: int,
+        video_url: str,
+) -> None:
+    """Set the Posted column to TRUE and record the video's watch URL for the given sheet row."""
+    sheets.spreadsheets().values().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={
+            "valueInputOption": "USER_ENTERED",
+            "data": [
+                {"range": f"{sheet_range}!{_col_letter(posted_col_idx)}{row_number}", "values": [["TRUE"]]},
+                {"range": f"{sheet_range}!{_col_letter(video_id_col_idx)}{row_number}", "values": [[video_url]]},
+            ],
+        },
+    ).execute()
 
 
 # ── Drive ────────────────────────────────────────────────────────────────────
@@ -303,16 +371,27 @@ def _parse_scheduled_date(value: str) -> date | None:
     return None
 
 
-def upload_pending_videos(videos_to_upload: list[dict]) -> None:
+def upload_pending_videos(
+        videos_to_upload: list[dict],
+        spreadsheet_id: str = SPREADSHEET_ID,
+        sheet_range: str = SHEET_NAME,
+) -> None:
     """
     Upload every row in `videos_to_upload` whose 'Scheduled Date' is today or in the past.
 
     For each due row: download its video/thumbnail via get_assets() into the
     default download paths, upload the video from those paths, then delete
-    the downloaded files.
+    the downloaded files. On success, the sheet row is updated: the 'Posted'
+    column is set to TRUE and the video's watch URL is written to a 'Video ID'
+    column (added to the sheet automatically if it doesn't already exist).
     """
     youtube = get_authenticated_service()
+    sheets = get_sheets_service()
     today = date.today()
+
+    header = _get_header(sheets, spreadsheet_id, sheet_range)
+    posted_col_idx = header.index(POSTING_COLUMN)
+    header, video_id_col_idx = _ensure_column(sheets, spreadsheet_id, sheet_range, header, VIDEO_ID_COLUMN)
 
     for video_row in videos_to_upload:
         scheduled_date = _parse_scheduled_date(video_row.get("Scheduled Posting Date", ""))
@@ -352,6 +431,17 @@ def upload_pending_videos(videos_to_upload: list[dict]) -> None:
                 else:
                     print("[WARN] Video was uploaded but could not be added to the playlist.")
                     print("       You can add it manually in YouTube Studio.")
+
+                mark_video_posted(
+                    sheets=sheets,
+                    spreadsheet_id=spreadsheet_id,
+                    sheet_range=sheet_range,
+                    row_number=video_row["_row_number"],
+                    posted_col_idx=posted_col_idx,
+                    video_id_col_idx=video_id_col_idx,
+                    video_url=f"https://www.youtube.com/watch?v={video_id}",
+                )
+                print(f"✅ Sheet updated: row {video_row['_row_number']} marked as posted.")
             else:
                 print("\n[ERROR] Upload failed — no video ID returned.")
 
