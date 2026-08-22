@@ -1,0 +1,10 @@
+.git
+.idea
+.claude
+venv
+__pycache__
+*.pyc
+infra
+CHANGELOG.md
+CLAUDE.md
+*.iml
