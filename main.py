@@ -87,14 +87,26 @@ def get_credentials(token_file: str, scopes: list[str]) -> Credentials:
     """Return valid OAuth credentials for the given token file/scopes, refreshing/creating as needed."""
     creds = None
 
+    # if i use secrets manager i will need to read/load the file from secrets manager here before exiting
+
+
+    # Grab the token file if it exists and return it as creds
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, scopes)
 
+    # Check if creds  is empty or invalid (which states are invalid?)
     if not creds or not creds.valid:
+
+        # this branch seems like the creds can be valid but expired
+        # if creds exists and are expired and has a refresh token
         if creds and creds.expired and creds.refresh_token:
             print("Refreshing access token…")
+            # does this update the file when running locally?
+            # for lambda the file will need to be in /tmp directory to be writable
+            # if i use secrets manager i will need to write the file to secrets manager here before exiting
             creds.refresh(Request())
         else:
+            # this branch should never run in the cloud because it's designed to generate a new token which will require a human user
             if not os.path.exists(CLIENT_SECRETS_FILE):
                 sys.exit(
                     f"[ERROR] '{CLIENT_SECRETS_FILE}' not found.\n"
@@ -103,11 +115,12 @@ def get_credentials(token_file: str, scopes: list[str]) -> Credentials:
                 )
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, scopes)
             creds = flow.run_local_server(port=0)
-
+        # so this is where the actual file right happens but only if the token changes
         with open(token_file, "w") as fh:
             fh.write(creds.to_json())
         print(f"Credentials saved to '{token_file}'.")
 
+    # if the token is already available and valid, we just return creds
     return creds
 
 
