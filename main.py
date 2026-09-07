@@ -35,7 +35,7 @@ from google.oauth2.credentials import Credentials
 
 CLIENT_SECRETS_FILE = "client_secret.json"
 SPREADSHEET_ID = "1ixRaM2U94qshptAZ7JATM8bihBGlLniS5gD2S43y_F0"
-SHEET_NAME = "YT Segments"
+SHEET_NAME = "Segments"
 POSTING_COLUMN = "Posted"
 VIDEO_ID_COLUMN = "Video ID"
 PLAYLIST_ID = "PLGjEeEf-wkkDgD6xRh0e-VnloDrbpY_bJ"
@@ -437,13 +437,13 @@ def upload_pending_videos(
                 )
                 request.execute()
 
-                print(f"\nAdding to playlist '{video_row.get('Playlist', {PLAYLIST_ID})}'…")
-                success = add_to_playlist(youtube, video_id, video_row.get('Playlist', PLAYLIST_ID))
-                if success:
-                    print(f"✅ Added to playlist: https://www.youtube.com/playlist?list={video_row.get('Playlist', {PLAYLIST_ID})}")
-                else:
-                    print("[WARN] Video was uploaded but could not be added to the playlist.")
-                    print("       You can add it manually in YouTube Studio.")
+                # print(f"\nAdding to playlist '{video_row.get('Playlist', {PLAYLIST_ID})}'…")
+                # # success = add_to_playlist(youtube, video_id, video_row.get('Playlist', PLAYLIST_ID))
+                # if success:
+                #     print(f"✅ Added to playlist: https://www.youtube.com/playlist?list={video_row.get('Playlist', {PLAYLIST_ID})}")
+                # else:
+                #     print("[WARN] Video was uploaded but could not be added to the playlist.")
+                #     print("       You can add it manually in YouTube Studio.")
 
                 mark_video_posted(
                     sheets=sheets,
