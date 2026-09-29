@@ -35,9 +35,9 @@ from google.oauth2.credentials import Credentials
 
 CLIENT_SECRETS_FILE = "client_secret.json"
 SPREADSHEET_ID = "1ixRaM2U94qshptAZ7JATM8bihBGlLniS5gD2S43y_F0"
-SHEET_NAME = "Segments"
+SHEET_NAME = "Segments" # "Social Posts" or "Segments"
 POSTING_COLUMN = "Posted"
-VIDEO_ID_COLUMN = "Video ID"
+VIDEO_ID_COLUMN = "YouTube Video ID"
 PLAYLIST_ID = "PLGjEeEf-wkkDgD6xRh0e-VnloDrbpY_bJ"
 
 # YouTube and Sheets are authorized by different Google accounts, so each
@@ -418,7 +418,7 @@ def upload_pending_videos(
                 youtube=youtube,
                 file_path=video_path,
                 title=video_row.get("Title", ""),
-                description=video_row.get("Description", ""),
+                description=video_row.get("Caption", ""),
                 tags=[tag.strip() for tag in video_row.get("Tags", "").split(",") if tag.strip()],
                 category_id=video_row.get("Category", "22"),
                 privacy=video_row.get("Privacy", "public"),
