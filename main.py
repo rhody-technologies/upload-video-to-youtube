@@ -407,7 +407,8 @@ def upload_pending_videos(
     header, video_id_col_idx = _ensure_column(sheets, spreadsheet_id, sheet_range, header, VIDEO_ID_COLUMN)
 
     for video_row in videos_to_upload:
-        scheduled_date = _parse_scheduled_date(video_row.get("Scheduled Posting Date", ""))
+        print(f"\nProcessing row {video_row['_row_number']}…")
+        scheduled_date = _parse_scheduled_date(video_row.get("Posting Date", ""))
         if scheduled_date is None or scheduled_date > today:
             continue
 
