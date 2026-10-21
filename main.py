@@ -35,7 +35,16 @@ from google.oauth2.credentials import Credentials
 
 CLIENT_SECRETS_FILE = "client_secret.json"
 SPREADSHEET_ID = "1ixRaM2U94qshptAZ7JATM8bihBGlLniS5gD2S43y_F0"
-SHEET_NAME = "Segments" # "Social Posts" or "Segments"
+
+# Each "group" is an independently-schedulable sheet tab. Select one at run
+# time with --group, or the YT_UPLOAD_GROUP env var (handy for cron/launchd
+# jobs that each run this same script against a different group).
+GROUPS = {
+    "segments": "Segments",
+    "social": "Social Posts",
+}
+DEFAULT_GROUP = "segments"
+
 POSTING_COLUMN = "Posted"
 VIDEO_ID_COLUMN = "YouTube Video ID"
 PLAYLIST_ID = "PLGjEeEf-wkkDgD6xRh0e-VnloDrbpY_bJ"
@@ -386,8 +395,8 @@ def _parse_scheduled_date(value: str) -> date | None:
 
 def upload_pending_videos(
         videos_to_upload: list[dict],
+        sheet_range: str,
         spreadsheet_id: str = SPREADSHEET_ID,
-        sheet_range: str = SHEET_NAME,
 ) -> None:
     """
     Upload every row in `videos_to_upload` whose 'Scheduled Date' is today or in the past.
@@ -530,19 +539,41 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main():
-    print("Starting")
-    videos_to_upload = get_pending_rows(SPREADSHEET_ID, SHEET_NAME)
-    print("Authenticating with YouTube…")
-    upload_pending_videos(videos_to_upload)
+def resolve_group(group: str | None = None) -> str:
+    """
+    Resolve the active group: an explicit argument wins, then the
+    YT_UPLOAD_GROUP env var, then DEFAULT_GROUP. Exits if the resolved
+    group isn't a known sheet.
+    """
+    group = group or os.environ.get("YT_UPLOAD_GROUP") or DEFAULT_GROUP
+    if group not in GROUPS:
+        sys.exit(f"[ERROR] Unknown group '{group}'. Valid groups: {', '.join(GROUPS)}")
+    return group
 
+
+def main(group: str | None = None):
+    group = resolve_group(group)
+    sheet_name = GROUPS[group]
+    print(f"Starting (group={group!r}, sheet={sheet_name!r})")
+    videos_to_upload = get_pending_rows(SPREADSHEET_ID, sheet_name)
+    print("Authenticating with YouTube…")
+    upload_pending_videos(videos_to_upload, sheet_range=sheet_name)
 
 
 def handler(event, context):
-    """AWS Lambda entry point (placeholder)."""
-    return {"statusCode": 200, "body": "yt-uploader placeholder"}
+    """AWS Lambda entry point. `event` may carry {"group": "segments"}."""
+    group = (event or {}).get("group")
+    main(group)
+    return {"statusCode": 200, "body": f"yt-uploader done (group={resolve_group(group)})"}
 
 
 if __name__ == "__main__":
-    # main()
-    main()
+    parser = argparse.ArgumentParser(add_help=True)
+    parser.add_argument(
+        "--group",
+        choices=list(GROUPS),
+        default=None,
+        help=f"Which sheet/group to run (default: {DEFAULT_GROUP}, or $YT_UPLOAD_GROUP)",
+    )
+    args, _ = parser.parse_known_args()
+    main(args.group)

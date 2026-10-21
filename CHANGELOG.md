@@ -2,6 +2,12 @@
 
 ## [UNRELEASED]
 
+## v0.2.0
+
+### Changed
+
+- Execution logic to specify the "group" to use when executing main.py. Prevents hardcoding the sheet name to execute against before each run.
+
 ## v0.1.0
 
 ### Added

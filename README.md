@@ -37,7 +37,8 @@ with the resulting video URL.
 ## Running
 
 ```bash
-python main.py
+python3 main.py --group social
+python3 main.py --group segments
 ```
 
 On first run, a browser window will open twice to authorize the app — once
