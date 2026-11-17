@@ -45,8 +45,8 @@ GROUPS = {
 }
 DEFAULT_GROUP = "segments"
 
-POSTING_COLUMN = "Posted"
 VIDEO_ID_COLUMN = "YouTube Video ID"
+POSTING_DATE_COLUMN = "Posting Date"
 PLAYLIST_ID = "PLGjEeEf-wkkDgD6xRh0e-VnloDrbpY_bJ"
 
 # YouTube and Sheets are authorized by different Google accounts, so each
@@ -150,9 +150,24 @@ def get_drive_service() -> object:
 
 # ── Sheets ───────────────────────────────────────────────────────────────────
 
+def _parse_scheduled_date(value: str) -> date | None:
+    """Parse a 'Posting Date' cell value into a date, or None if blank/unparseable."""
+    value = str(value).strip()
+    if not value:
+        return None
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
+        try:
+            return datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
 def get_pending_rows(spreadsheet_id: str = SPREADSHEET_ID, sheet_range: str = "Sheet1") -> list[dict]:
     """
-    Fetch rows from the given Google Sheet where the 'Posting' column is FALSE.
+    Fetch rows from the given Google Sheet that still need to be uploaded:
+    rows with no value in the 'YouTube Video ID' column whose 'Posting Date'
+    is today or earlier.
 
     Returns a list of dicts mapping header names to cell values, one per pending row.
     Each dict also carries a '_row_number' key: its 1-indexed row number in the
@@ -169,18 +184,27 @@ def get_pending_rows(spreadsheet_id: str = SPREADSHEET_ID, sheet_range: str = "S
         return []
 
     header, *data_rows = rows
+    video_id_idx = header.index(VIDEO_ID_COLUMN) if VIDEO_ID_COLUMN in header else None
     try:
-        posting_idx = header.index(POSTING_COLUMN)
+        posting_date_idx = header.index(POSTING_DATE_COLUMN)
     except ValueError:
-        sys.exit(f"[ERROR] Could not find a '{POSTING_COLUMN}' column in the sheet header row.")
+        sys.exit(f"[ERROR] Could not find a '{POSTING_DATE_COLUMN}' column in the sheet header row.")
 
+    today = date.today()
     pending_rows = []
     for i, row in enumerate(data_rows):
-        posting_value = row[posting_idx] if posting_idx < len(row) else ""
-        if str(posting_value).strip().upper() == "FALSE":
-            row_dict = dict(zip(header, row))
-            row_dict["_row_number"] = i + 2  # +1 for header row, +1 for 1-indexing
-            pending_rows.append(row_dict)
+        video_id_value = row[video_id_idx] if video_id_idx is not None and video_id_idx < len(row) else ""
+        if str(video_id_value).strip():
+            continue  # already has a YouTube Video ID
+
+        posting_date_value = row[posting_date_idx] if posting_date_idx < len(row) else ""
+        scheduled_date = _parse_scheduled_date(posting_date_value)
+        if scheduled_date is None or scheduled_date > today:
+            continue
+
+        row_dict = dict(zip(header, row))
+        row_dict["_row_number"] = i + 2  # +1 for header row, +1 for 1-indexing
+        pending_rows.append(row_dict)
 
     return pending_rows
 
@@ -231,20 +255,15 @@ def mark_video_posted(
         spreadsheet_id: str,
         sheet_range: str,
         row_number: int,
-        posted_col_idx: int,
         video_id_col_idx: int,
         video_url: str,
 ) -> None:
-    """Set the Posted column to TRUE and record the video's watch URL for the given sheet row."""
-    sheets.spreadsheets().values().batchUpdate(
+    """Record the video's watch URL in the YouTube Video ID column for the given sheet row."""
+    sheets.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
-        body={
-            "valueInputOption": "USER_ENTERED",
-            "data": [
-                {"range": f"{sheet_range}!{_col_letter(posted_col_idx)}{row_number}", "values": [["TRUE"]]},
-                {"range": f"{sheet_range}!{_col_letter(video_id_col_idx)}{row_number}", "values": [[video_url]]},
-            ],
-        },
+        range=f"{sheet_range}!{_col_letter(video_id_col_idx)}{row_number}",
+        valueInputOption="USER_ENTERED",
+        body={"values": [[video_url]]},
     ).execute()
 
 
@@ -380,48 +399,31 @@ def upload_video(
     return video_id
 
 
-def _parse_scheduled_date(value: str) -> date | None:
-    """Parse a 'Scheduled Date' cell value into a date, or None if blank/unparseable."""
-    value = str(value).strip()
-    if not value:
-        return None
-    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y"):
-        try:
-            return datetime.strptime(value, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
 def upload_pending_videos(
         videos_to_upload: list[dict],
         sheet_range: str,
         spreadsheet_id: str = SPREADSHEET_ID,
 ) -> None:
     """
-    Upload every row in `videos_to_upload` whose 'Scheduled Date' is today or in the past.
+    Upload every row in `videos_to_upload` (each already known to be due, per
+    get_pending_rows()).
 
-    For each due row: download its video/thumbnail via get_assets() into the
+    For each row: download its video/thumbnail via get_assets() into the
     default download paths, upload the video from those paths, then delete
-    the downloaded files. On success, the sheet row is updated: the 'Posted'
-    column is set to TRUE and the video's watch URL is written to a 'Video ID'
-    column (added to the sheet automatically if it doesn't already exist).
+    the downloaded files. On success, the video's watch URL is written to
+    the 'YouTube Video ID' column (added to the sheet automatically if it
+    doesn't already exist).
     """
     youtube = get_authenticated_service()
     sheets = get_sheets_service()
-    today = date.today()
 
     header = _get_header(sheets, spreadsheet_id, sheet_range)
-    posted_col_idx = header.index(POSTING_COLUMN)
     header, video_id_col_idx = _ensure_column(sheets, spreadsheet_id, sheet_range, header, VIDEO_ID_COLUMN)
 
     for video_row in videos_to_upload:
         print(f"\nProcessing row {video_row['_row_number']}…")
-        scheduled_date = _parse_scheduled_date(video_row.get("Posting Date", ""))
-        if scheduled_date is None or scheduled_date > today:
-            continue
 
-        video_path, thumbnail_path = get_assets(video_row["Video Link"], video_row["Thumbnail Link"])
+        video_path, thumbnail_path = get_assets(video_row["Content URL"], video_row["Thumbnail URL"])
 
         try:
             video_id = upload_video(
@@ -460,7 +462,6 @@ def upload_pending_videos(
                     spreadsheet_id=spreadsheet_id,
                     sheet_range=sheet_range,
                     row_number=video_row["_row_number"],
-                    posted_col_idx=posted_col_idx,
                     video_id_col_idx=video_id_col_idx,
                     video_url=f"https://www.youtube.com/watch?v={video_id}",
                 )

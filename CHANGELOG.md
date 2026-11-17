@@ -2,10 +2,14 @@
 
 ## [UNRELEASED]
 
+## v0.3.0
+
+### Changed
+- Get pending rows logic uses "YouTube Video ID" instead of "Posted" after Content Calendar refactor.
+
 ## v0.2.0
 
 ### Changed
-
 - Execution logic to specify the "group" to use when executing main.py. Prevents hardcoding the sheet name to execute against before each run.
 
 ## v0.1.0
