@@ -429,7 +429,7 @@ def upload_pending_videos(
             video_id = upload_video(
                 youtube=youtube,
                 file_path=video_path,
-                title=video_row.get("Title", ""),
+                title=video_row.get("Video Title", ""),
                 description=video_row.get("Caption", ""),
                 tags=[tag.strip() for tag in video_row.get("Tags", "").split(",") if tag.strip()],
                 category_id=video_row.get("Category", "22"),

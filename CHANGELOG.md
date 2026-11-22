@@ -2,6 +2,11 @@
 
 ## [UNRELEASED]
 
+## v0.3.1
+
+### Changed
+- Upload pending rows logic to use "Video Title" instead of "Title" after Content Calendar refactor.
+
 ## v0.3.0
 
 ### Changed
